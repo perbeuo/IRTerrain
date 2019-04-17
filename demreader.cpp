@@ -1,11 +1,11 @@
 #include "demreader.h"
 using namespace std;
 
-DEMReader::DEMReader()
+DEMReader::DEMReader(string filename)
 {
-    const char *pszFilename="/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif";
+//    const char *pszFilename="/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif";
     GDALAllRegister();
-    poDataset = (GDALDataset*)GDALOpen(pszFilename, GA_ReadOnly);
+    poDataset = (GDALDataset*)GDALOpen(filename.c_str(), GA_ReadOnly);
     if (poDataset == NULL)
     {
         cout << "open failed!" << endl;
@@ -364,39 +364,40 @@ QList<Point> DEMReader::featurePointSelection(QList<Point> pts, int row, int col
             if (i == 0 || i == row-1)
             {
                 //add corner
-                if (j == 0 || j == col-1)
-                {
-                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
-                }
-                else
-                {
-                    double diff1, diff2, diff3;
-                    //same or different direction of slope means different gradient
-                    diff1 = pts[i*col+j].z - pts[i*col+j-1].z;
-                    diff2 = pts[i*col+j+1].z - pts[i*col+j].z;
-                    diff3 = fabs(diff1-diff2);
-                    //not the corner point
-                    if (diff3 > SIDE_THRESHOLD)
-                    {
-                        respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
-                    }
+//                if (j == 0 || j == col-1)
+//                {
+//                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                }
+//                else
+//                {
+//                    double diff1, diff2, diff3;
+//                    //same or different direction of slope means different gradient
+//                    diff1 = pts[i*col+j].z - pts[i*col+j-1].z;
+//                    diff2 = pts[i*col+j+1].z - pts[i*col+j].z;
+//                    diff3 = fabs(diff1-diff2);
+//                    //not the corner point
+//                    if (diff3 > SIDE_THRESHOLD)
+//                    {
+//                        respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                    }
 
-                }
-                //                resNorms->push_back(vec3(0, 0, 0));
+//                }
+
+                respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
             }
             //for the first and last column(without cornor points)
             else if (j == 0 || j == col-1)
             {
-                double diff1, diff2, diff3;
-                //same or different direction of slope means different gradient
-                diff1 = pts[i*col+j].z - pts[(i-1)*col+j].z;
-                diff2 = pts[(i+1)*col+j].z - pts[i*col+j].z;
-                diff3 = fabs(diff1-diff2);
-                if (diff3 > SIDE_THRESHOLD)
-                {
-                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
-                }
-                //                resNorms->push_back(vec3(0, 0, 0));
+//                double diff1, diff2, diff3;
+//                //same or different direction of slope means different gradient
+//                diff1 = pts[i*col+j].z - pts[(i-1)*col+j].z;
+//                diff2 = pts[(i+1)*col+j].z - pts[i*col+j].z;
+//                diff3 = fabs(diff1-diff2);
+//                if (diff3 > SIDE_THRESHOLD)
+//                {
+//                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                }
+                respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
             }
             //for other points
             else
@@ -558,23 +559,23 @@ double DEMReader::getDiffY()
     return diffY;
 }
 
-void DEMReader::getGoogleMapTile(double lng, double lat, cv::Point *pixelCoord, cv::Point *tileCoord)
+void DEMReader::getGoogleMapPixel(double lng, double lat, cv::Point *pixelCoord, int zoomLevel)
 {
     cv::Point2d worldCoord = project(lat, lng);
-    cout << "world:" << worldCoord.x << ", " << worldCoord.y << endl;
-    int scale = 1 << 12;//12 is Google map zoom level
+//    cout << "world:" << worldCoord.x << ", " << worldCoord.y << endl;
+    int scale = 1 << zoomLevel;
     *pixelCoord = cv::Point(floor(worldCoord.x * scale), floor(worldCoord.y * scale));
 //    cout << "pixel:" << pixelCoord.x << ", " << pixelCoord.y << endl;
-    *tileCoord = cv::Point(floor(worldCoord.x * scale/TILE_SIZE), floor(worldCoord.y * scale/TILE_SIZE));
+//    *tileCoord = cv::Point(floor(worldCoord.x * scale/TILE_SIZE), floor(worldCoord.y * scale/TILE_SIZE));
 //    cout << "tile:" << tileCoord.x << ", " << tileCoord.y << endl;
 //    cout << "pixel in image:" << pixelCoord.x-tileCoord.x*TILE_SIZE << ", " << pixelCoord.y-tileCoord.y*TILE_SIZE << endl;
 }
 
-void DEMReader::getGoogleMapTile(double lng, double lat, cv::Point *tileCoord)
+void DEMReader::getGoogleMapTile(double lng, double lat, cv::Point *tileCoord, int zoomLevel)
 {
     cv::Point2d worldCoord = project(lat, lng);
-    cout << "world:" << worldCoord.x << ", " << worldCoord.y << endl;
-    int scale = 1 << 12;//12 is Google map zoom level
+//    cout << "world:" << worldCoord.x << ", " << worldCoord.y << endl;
+    int scale = 1 << zoomLevel;
 //    cv::Point *pixelCoord = cv::Point(floor(worldCoord.x * scale), floor(worldCoord.y * scale));
 //    cout << "pixel:" << pixelCoord.x << ", " << pixelCoord.y << endl;
     *tileCoord = cv::Point(floor(worldCoord.x * scale/TILE_SIZE), floor(worldCoord.y * scale/TILE_SIZE));

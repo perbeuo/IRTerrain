@@ -19,11 +19,11 @@ typedef struct _TRIANGLE_DESC_
 class DEMReader
 {
 public:
-    DEMReader();
+    DEMReader(std::string filename);
     ~DEMReader();
     std::vector<TRIANGLE_DESC> getCVTriangles(int startX, int startY, int sizeX, int sizeY, bool needFeature);
-    void getGoogleMapTile(double lng, double lat, cv::Point *pixelCoord, cv::Point *tileCoord);
-    void getGoogleMapTile(double lng, double lat, cv::Point *tileCoord);
+    void getGoogleMapPixel(double lng, double lat, cv::Point *pixelCoord, int zoomLevel);
+    void getGoogleMapTile(double lng, double lat, cv::Point *tileCoord, int zoomLevel);
     void calTextureRange();
     int getWidth();
     int getHeight();
@@ -51,6 +51,7 @@ private:
     int texStartYNum;
     int texEndXNum;
     int texEndYNum;
+    std::string filename;
     GDALRasterBand *poBand;
     GDALDataset *poDataset;
 

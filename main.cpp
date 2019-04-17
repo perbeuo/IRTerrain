@@ -23,7 +23,6 @@
 #include "opencv2/opencv.hpp"
 #include "util.h"
 #include "demreader.h"
-//#define TILE_SIZE 256
 
 using namespace std;
 
@@ -135,31 +134,33 @@ osg::ref_ptr<osg::Texture2D> createTexture2D(osg::ref_ptr<osg::Image> image)
 osg::ref_ptr<osg::Geode> createTerrain()
 {
     osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("/home/lzt/material/img_map/gs_637_474_10.jpg");
-    int xSize = 100, ySize = 100;
+//    osg::ref_ptr<osg::Image> image = new osg::Image; //= osgDB::readImageFile("/home/lzt/material/img_map/gs_637_474_10.jpg");
     osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
     osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
     osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
-    DEMReader *demReader = new DEMReader();
-    int xNum = 2, yNum = 2;
-    double startLng = demReader->getOriginX();
-    double startLat = demReader->getOriginY();
+    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
+    int startFromX = 1100, startFromY = 800;
+    int xNum = 5, yNum = 5;
+    int xSize = 100, ySize = 100;
     double diffx = demReader->getDiffX();
     double diffy = demReader->getDiffY();
+    double startLng = demReader->getOriginX() + startFromX*diffx;//start lng from the area you chosen, has diff
+    double startLat = demReader->getOriginY() + startFromY*diffy;
     double endLng = startLng + diffx*xSize*xNum;
     double endLat = startLat + diffy*ySize*yNum;
     cv::Point startTile;
     cv::Point endTile;
-    demReader->getGoogleMapTile(startLng, startLat, &startTile);
-    demReader->getGoogleMapTile(endLng, endLat, &endTile);
+    demReader->getGoogleMapTile(startLng, startLat, &startTile, 12);
+    demReader->getGoogleMapTile(endLng, endLat, &endTile, 12);
     cout << startTile.x << ", " << startTile.y << endl;
     cout << endTile.x << ", " << endTile.y << endl;
-    cv::Mat bigImg(TILE_SIZE*xNum, TILE_SIZE*yNum, 16);
-//    cv::Mat tmp = cv::imread("/home/lzt/material/img_map/gs_637_474_10.jpg");
-//    cout << tmp.type() << endl;
-    for (int i = 0; i < yNum; i++)
+    int xPicNum = endTile.x-startTile.x;
+    int yPicNum = endTile.y-startTile.y;
+    cv::Mat bigImg(TILE_SIZE*(yPicNum+1), TILE_SIZE*(xPicNum+1), 16);
+
+    for (int i = 0; i <= yPicNum; i++)
     {
-        for (int j = 0; j < xNum; j++)
+        for (int j = 0; j <= xPicNum; j++)
         {
             QString imgFileName = "/home/lzt/material/img_map/12/gs_";
             imgFileName.append(QString::number(startTile.x+j));
@@ -172,18 +173,19 @@ osg::ref_ptr<osg::Geode> createTerrain()
             cout << imgFileName.toStdString() << endl;
         }
     }
-//    cv::imwrite("123.jpg",bigImg);
+    cv::imwrite("123.jpg",bigImg);
+    int pixelStartFromX = startTile.x*TILE_SIZE;
+    int pixelStartFromY = startTile.y*TILE_SIZE;
 
-
-    for (int i = 0; i < xNum; i++)
+    for (int i = 0; i < yNum; i++)
     {
-        for (int j = 0; j < yNum; j++)
+        for (int j = 0; j < xNum; j++)
         {
 //            if (i==1&&j==1)
 //                break;
             vector<TRIANGLE_DESC> triangles;
 //            osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
-            triangles = demReader->getCVTriangles(i*xSize, j*ySize, xSize+1, ySize+1, true);
+            triangles = demReader->getCVTriangles(i*xSize + startFromX, j*ySize + startFromY, xSize+1, ySize+1, true);
 //            osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
 //            osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
             int height = demReader->getHeight();
@@ -195,12 +197,39 @@ osg::ref_ptr<osg::Geode> createTerrain()
                 points->push_back(osg::Vec3(triangle.pt2.x, (height-1)*30-triangle.pt2.y, triangle.pt2.z));
                 points->push_back(osg::Vec3(triangle.pt1.x, (height-1)*30-triangle.pt1.y, triangle.pt1.z));
                 //                double scale = triangle.pt3.x/(30*xSize);
-                texCoord->push_back(osg::Vec2(triangle.pt3.x/(30*(xSize+1)), 1-triangle.pt3.y/(30*(ySize+1))));
-                texCoord->push_back(osg::Vec2(triangle.pt2.x/(30*(xSize+1)), 1-triangle.pt2.y/(30*(ySize+1))));
-                texCoord->push_back(osg::Vec2(triangle.pt1.x/(30*(xSize+1)), 1-triangle.pt1.y/(30*(ySize+1))));
+
+                //calculate texture coordinates for Google map
+                double lng, lat;
+                int pixelX, pixelY;
+                cv::Point pixelCoord;
+                lng = startLng + ((triangle.pt3.x/30)-startFromX)*diffx;
+                lat = startLat + ((triangle.pt3.y/30)-startFromY)*diffy;
+                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, 12);
+                pixelX = pixelCoord.x - pixelStartFromX;
+                pixelY = pixelCoord.y - pixelStartFromY;
+                texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
+
+                lng = startLng + ((triangle.pt2.x/30)-startFromX)*diffx;
+                lat = startLat + ((triangle.pt2.y/30)-startFromY)*diffy;
+                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, 12);
+                pixelX = pixelCoord.x - pixelStartFromX;
+                pixelY = pixelCoord.y - pixelStartFromY;
+                texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
+
+                lng = startLng + ((triangle.pt1.x/30)-startFromX)*diffx;
+                lat = startLat + ((triangle.pt1.y/30)-startFromY)*diffy;
+                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, 12);
+                pixelX = pixelCoord.x - pixelStartFromX;
+                pixelY = pixelCoord.y - pixelStartFromY;
+                texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
+//                texCoord->push_back(osg::Vec2(triangle.pt3.x/(30*(xSize+1)), 1-triangle.pt3.y/(30*(ySize+1))));
+//                texCoord->push_back(osg::Vec2(triangle.pt2.x/(30*(xSize+1)), 1-triangle.pt2.y/(30*(ySize+1))));
+//                texCoord->push_back(osg::Vec2(triangle.pt1.x/(30*(xSize+1)), 1-triangle.pt1.y/(30*(ySize+1))));
             }
         }
     }
+    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("123.jpg");
+//    image->setImage(bigImg.cols, bigImg.rows, 3, GL_BGR, GL_BGR, GL_UNSIGNED_BYTE, bigImg.data, osg::Image::NO_DELETE, 1);
     geometry->setVertexArray(points.get());
     geometry->setTexCoordArray(0,texCoord.get());
     cout << "pt size" << points->size() << endl;
@@ -217,28 +246,22 @@ osg::ref_ptr<osg::Geode> createTerrain()
     return geode.release();
 }
 
-int main()
+int showTerrain()
 {
     osg::ref_ptr<osg::Group> scene = new osg::Group;
-    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-    osg::ref_ptr<osg::Node> node = new osg::Node();
-    //    node = osgDB::readNodeFile("terrain_no_normal.osg");
-    //    node = osgDB::readNodeFile("terrain.osg");
-    node = osgDB::readNodeFile("/home/lzt/Downloads/osg-data/OpenSceneGraph-Data/cessna.osg");
-    //    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("/home/lzt/material/img_map/gs_637_474_10.jpg");
-    //        osg::ref_ptr<osg::Image> image = osgDB::readImageFile("/home/lzt/Pictures/220956jq48448gomf05j4g.png");
-    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("/home/lzt/Pictures/IRTexture.bmp");
-    //        osg::ref_ptr<osg::Image> image = osgDB::readImageFile("/home/lzt/material/20150630152144255.png");
+//    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+//    osg::ref_ptr<osg::Node> node = new osg::Node();
 
+    scene->addChild(createTerrain());
     osg::BoundingSphere bs;
-    node->computeBound();
-    bs = node->getBound();
+    scene->getChild(0)->computeBound();
+    bs = scene->getChild(0)->getBound();
     osg::ref_ptr<osg::Light> light = new osg::Light();
     light->setLightNum(0);
     //设置方向
     light->setDirection(osg::Vec3(0.0f, 0.0f, -1.0f));
     //设置位置
-    light->setPosition(osg::Vec4(bs.center().x() + 600, bs.center().y(), bs.center().z()+ bs.radius(), 0.0f));
+    light->setPosition(osg::Vec4(bs.center().x()+bs.radius(), bs.center().y(), bs.center().z()+(bs.radius()/2), 0.0f));
     //设置环境光的颜色
     light->setAmbient(osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     //设置散射光颜色
@@ -254,41 +277,29 @@ int main()
     //创建光源
     osg::ref_ptr<osg::LightSource> lightSource = new osg::LightSource();
     lightSource->setLight(light.get());
-    //        scene->addChild(lightSource.get());
-
-
-    if (image.get())
-    {
-        osg::ref_ptr<osg::Texture2D> texture=new osg::Texture2D();
-        texture->setDataVariance(osg::Object::DYNAMIC);
-        texture->setImage(image.get());
-        texture->setUnRefImageDataAfterApply( true );
-        //        texture->setWrap(osg::Texture2D::WrapParameter::WRAP_S,osg::Texture2D::WrapMode::CLAMP_TO_BORDER);
-        //        texture->setWrap(osg::Texture2D::WrapParameter::WRAP_T,osg::Texture2D::WrapMode::CLAMP_TO_BORDER);
-        //        texture->setWrap(osg::Texture2D::WrapParameter::WRAP_R,osg::Texture2D::WrapMode::CLAMP_TO_BORDER);
-
-        //        texture->setFilter(osg::Texture2D::FilterParameter::MIN_FILTER,osg::Texture2D::FilterMode::LINEAR);
-        //        texture->setFilter(osg::Texture2D::FilterParameter::MAG_FILTER,osg::Texture2D::FilterMode::LINEAR);
-
-        node->getOrCreateStateSet()->setTextureAttributeAndModes(0, texture.get(), osg::StateAttribute::ON);
-        //        node->getOrCreateStateSet()->setTextureAttribute(0,texture,osg::StateAttribute::OVERRIDE);
-        //        node->getOrCreateStateSet()->setTextureMode(0,GL_TEXTURE_2D,osg::StateAttribute::ON|osg::StateAttribute::OVERRIDE);
-        //                node->getOrCreateStateSet()->setTextureMode(0,GL_TEXTURE_GEN_S,osg::StateAttribute::ON|osg::StateAttribute::OVERRIDE);
-        //        node->getOrCreateStateSet()->setTextureMode(0,GL_TEXTURE_GEN_T,osg::StateAttribute::ON|osg::StateAttribute::OVERRIDE);
-    }
-    node->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF|osg::StateAttribute::OVERRIDE);
-    node->getOrCreateStateSet()->setMode(GL_LIGHT0, osg::StateAttribute::OFF|osg::StateAttribute::OVERRIDE);
-
-    scene->addChild(createTerrain());
-//    osgUtil::SmoothingVisitor smv;
-//    smv.smooth(*scene->get);
+    scene->addChild(lightSource.get());
 
     osgUtil::Optimizer optimizer;
     optimizer.optimize(scene.get());
-    //        osgDB::writeNodeFile(*(scene.get()), "terrain_no_normal.osg");
 
     osgViewer::Viewer viewer;
     viewer.setSceneData(scene);
     viewer.realize();
     return viewer.run();
+}
+
+int main()
+{
+//    DEMReader demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
+//    double diffx = demReader->getDiffX();
+//    double diffy = demReader->getDiffY();
+//    double startLng = demReader->getOriginX();
+//    double startLat = demReader->getOriginY();
+//    double endLng = startLng + diffx*3601;
+//    double endLat = startLat + diffy*3601;
+//    cv::Point startTile;
+//    cv::Point endTile;
+//    demReader->getGoogleMapTile(startLng, startLat, &startTile, 14);
+//    demReader->getGoogleMapTile(endLng, endLat, &endTile, 14);
+    showTerrain();
 }
