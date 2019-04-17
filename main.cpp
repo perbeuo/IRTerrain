@@ -139,19 +139,21 @@ osg::ref_ptr<osg::Geode> createTerrain()
     osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
     osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
     DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
-    int startFromX = 1100, startFromY = 800;
+    int startFromX = 2900, startFromY = 650;
     int xNum = 5, yNum = 5;
     int xSize = 100, ySize = 100;
+    int zoomLevel = 15;
+    bool infrared = false;
     double diffx = demReader->getDiffX();
     double diffy = demReader->getDiffY();
-    double startLng = demReader->getOriginX() + startFromX*diffx;//start lng from the area you chosen, has diff
+    double startLng = demReader->getOriginX() + startFromX*diffx;//start lng from the area you have chosen, has offset
     double startLat = demReader->getOriginY() + startFromY*diffy;
     double endLng = startLng + diffx*xSize*xNum;
     double endLat = startLat + diffy*ySize*yNum;
     cv::Point startTile;
     cv::Point endTile;
-    demReader->getGoogleMapTile(startLng, startLat, &startTile, 12);
-    demReader->getGoogleMapTile(endLng, endLat, &endTile, 12);
+    demReader->getGoogleMapTile(startLng, startLat, &startTile, zoomLevel);
+    demReader->getGoogleMapTile(endLng, endLat, &endTile, zoomLevel);
     cout << startTile.x << ", " << startTile.y << endl;
     cout << endTile.x << ", " << endTile.y << endl;
     int xPicNum = endTile.x-startTile.x;
@@ -162,18 +164,27 @@ osg::ref_ptr<osg::Geode> createTerrain()
     {
         for (int j = 0; j <= xPicNum; j++)
         {
-            QString imgFileName = "/home/lzt/material/img_map/12/gs_";
+            QString imgFileName = "/home/lzt/material/img_map/";
+            imgFileName.append(QString::number(zoomLevel));
+            imgFileName.append("/gs_");
             imgFileName.append(QString::number(startTile.x+j));
             imgFileName.append("_");
             imgFileName.append(QString::number(startTile.y+i));
-            imgFileName.append("_12.jpg");
+            imgFileName.append("_");
+            imgFileName.append(QString::number(zoomLevel));
+            imgFileName.append(".jpg");
             cv::Mat img = cv::imread(imgFileName.toStdString());
             cv::Mat tmp = bigImg.colRange(img.cols*j, img.cols*(j+1)).rowRange(img.rows*i, img.rows*(i+1));
             img.copyTo(tmp);
             cout << imgFileName.toStdString() << endl;
         }
     }
+    if(infrared)
+    {
+        cv::cvtColor(bigImg,bigImg,cv::COLOR_BGR2GRAY);
+    }
     cv::imwrite("123.jpg",bigImg);
+
     int pixelStartFromX = startTile.x*TILE_SIZE;
     int pixelStartFromY = startTile.y*TILE_SIZE;
 
@@ -204,21 +215,21 @@ osg::ref_ptr<osg::Geode> createTerrain()
                 cv::Point pixelCoord;
                 lng = startLng + ((triangle.pt3.x/30)-startFromX)*diffx;
                 lat = startLat + ((triangle.pt3.y/30)-startFromY)*diffy;
-                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, 12);
+                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, zoomLevel);
                 pixelX = pixelCoord.x - pixelStartFromX;
                 pixelY = pixelCoord.y - pixelStartFromY;
                 texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
 
                 lng = startLng + ((triangle.pt2.x/30)-startFromX)*diffx;
                 lat = startLat + ((triangle.pt2.y/30)-startFromY)*diffy;
-                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, 12);
+                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, zoomLevel);
                 pixelX = pixelCoord.x - pixelStartFromX;
                 pixelY = pixelCoord.y - pixelStartFromY;
                 texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
 
                 lng = startLng + ((triangle.pt1.x/30)-startFromX)*diffx;
                 lat = startLat + ((triangle.pt1.y/30)-startFromY)*diffy;
-                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, 12);
+                demReader->getGoogleMapPixel(lng, lat, &pixelCoord, zoomLevel);
                 pixelX = pixelCoord.x - pixelStartFromX;
                 pixelY = pixelCoord.y - pixelStartFromY;
                 texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
@@ -290,16 +301,18 @@ int showTerrain()
 
 int main()
 {
-//    DEMReader demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
-//    double diffx = demReader->getDiffX();
-//    double diffy = demReader->getDiffY();
-//    double startLng = demReader->getOriginX();
-//    double startLat = demReader->getOriginY();
-//    double endLng = startLng + diffx*3601;
-//    double endLat = startLat + diffy*3601;
-//    cv::Point startTile;
-//    cv::Point endTile;
-//    demReader->getGoogleMapTile(startLng, startLat, &startTile, 14);
-//    demReader->getGoogleMapTile(endLng, endLat, &endTile, 14);
+    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
+    double diffx = demReader->getDiffX();
+    double diffy = demReader->getDiffY();
+    double startLng = demReader->getOriginX();
+    double startLat = demReader->getOriginY();
+    double endLng = startLng + diffx*3601;
+    double endLat = startLat + diffy*3601;
+    cv::Point startTile;
+    cv::Point endTile;
+    demReader->getGoogleMapTile(startLng, startLat, &startTile, 15);
+    demReader->getGoogleMapTile(endLng, endLat, &endTile, 15);
+    cout << startTile.x << ", " << startTile.y << endl;
+    cout << endTile.x << ", " << endTile.y << endl;
     showTerrain();
 }
