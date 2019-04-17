@@ -123,6 +123,7 @@ osg::ref_ptr<osg::Texture2D> createTexture2D(osg::ref_ptr<osg::Image> image)
     //设置环绕模式
     texture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
     texture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+    texture->setResizeNonPowerOfTwoHint(false);
 
     //创建状态集对象
     //    osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet();
@@ -139,8 +140,8 @@ osg::ref_ptr<osg::Geode> createTerrain()
     osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
     osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
     DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
-    int startFromX = 2900, startFromY = 650;
-    int xNum = 5, yNum = 5;
+    int startFromX = 3000, startFromY = 750;
+    int xNum = 4, yNum = 3;
     int xSize = 100, ySize = 100;
     int zoomLevel = 15;
     bool infrared = false;
@@ -196,7 +197,7 @@ osg::ref_ptr<osg::Geode> createTerrain()
 //                break;
             vector<TRIANGLE_DESC> triangles;
 //            osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
-            triangles = demReader->getCVTriangles(i*xSize + startFromX, j*ySize + startFromY, xSize+1, ySize+1, true);
+            triangles = demReader->getCVTriangles(j*xSize + startFromX, i*ySize + startFromY, xSize+1, ySize+1, true);
 //            osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
 //            osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
             int height = demReader->getHeight();
