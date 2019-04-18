@@ -23,6 +23,29 @@
 #include "opencv2/opencv.hpp"
 #include "util.h"
 #include "demreader.h"
+#include "skybox.h"
+
+#define ROCK_TEXTURE 0
+#define SAND_TEXTURE 1
+#define TREE_TEXTURE 2
+#define WATER_TEXTURE 3
+#define NO_TEXTURE_GRAY 0
+#define ROCK_TEXTURE_GRAY 0
+#define SAND_TEXTURE_GRAY 86
+#define TREE_TEXTURE_GRAY 171
+#define WATER_TEXTURE_GRAY 255
+#define ROCK_TEXTURE_B 0
+#define ROCK_TEXTURE_G 0
+#define ROCK_TEXTURE_R 255
+#define SAND_TEXTURE_B 0
+#define SAND_TEXTURE_G 255
+#define SAND_TEXTURE_R 255
+#define TREE_TEXTURE_B 0
+#define TREE_TEXTURE_G 255
+#define TREE_TEXTURE_R 0
+#define WATER_TEXTURE_B 255
+#define WATER_TEXTURE_G 0
+#define WATER_TEXTURE_R 0
 
 using namespace std;
 
@@ -141,10 +164,10 @@ osg::ref_ptr<osg::Geode> createTerrain()
     osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
     DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
     int startFromX = 3000, startFromY = 750;
-    int xNum = 4, yNum = 3;
+    int xNum = 3, yNum = 3;
     int xSize = 100, ySize = 100;
     int zoomLevel = 15;
-    bool infrared = false;
+    bool infrared = true;
     double diffx = demReader->getDiffX();
     double diffy = demReader->getDiffY();
     double startLng = demReader->getOriginX() + startFromX*diffx;//start lng from the area you have chosen, has offset
@@ -182,9 +205,80 @@ osg::ref_ptr<osg::Geode> createTerrain()
     }
     if(infrared)
     {
-        cv::cvtColor(bigImg,bigImg,cv::COLOR_BGR2GRAY);
+        cv::Mat gray;
+        cv::cvtColor(bigImg,gray,cv::COLOR_BGR2GRAY);
+        cv::Mat materialMap = cv::imread("/home/lzt/material/img_map/tmp-IR.bmp", cv::IMREAD_GRAYSCALE);
+        cout << materialMap.type() << endl;
+        QVector<double> radiations;
+        if ((materialMap.rows == gray.rows) && (materialMap.cols == gray.cols))
+        {
+            for (int i = 0; i < gray.rows; i++)
+            {
+                for (int j = 0; j < gray.cols; j++)
+                {
+                    int fixColor;
+                    double fixRate;
+                    switch ((int)materialMap.at<uchar>(i, j)) {
+                    case ROCK_TEXTURE_GRAY:
+                        fixColor = 50;
+                        fixRate = 1.25;
+                        break;
+                    case SAND_TEXTURE_GRAY:
+                        fixColor = 40;
+                        fixRate = 1.2;
+                        break;
+                    case TREE_TEXTURE_GRAY:
+                        fixColor = -70;
+                        fixRate = 0.8;
+                        break;
+                    case WATER_TEXTURE_GRAY:
+                        fixColor = -80;
+                        fixRate = 0.75;
+                        break;
+                    default:
+                        break;
+                    }
+                    int finalColor = (int)gray.at<uchar>(i, j) + fixColor;
+//                    if (finalColor > 255)
+//                        finalColor = 255;
+//                    else if(finalColor < 0)
+//                        finalColor = 0;
+                    int finalRateColor = (int)gray.at<uchar>(i, j)*fixRate;
+//                    if (finalRateColor == 0 || finalRateColor == 255)
+//                        cout << i << ", " << j << endl;
+//                    gray.at<uchar>(i, j) = finalRateColor;
+                    radiations.push_back(finalColor);
+                }
+            }
+            int minColor = 256, maxColor = -1;
+            for (int i = 0; i < gray.rows; i++)
+            {
+                for (int j = 0; j < gray.cols; j++)
+                {
+//                    minColor = min(minColor, (int)gray.at<uchar>(i, j));
+//                    maxColor = max(maxColor, (int)gray.at<uchar>(i, j));
+                    minColor = min(minColor, (int)radiations.at(i*gray.cols+j));
+                    maxColor = max(maxColor, (int)radiations.at(i*gray.cols+j));
+                }
+            }
+            int intervals = maxColor - minColor;
+            double gapColor = 255.0 / intervals;
+            for (int i = 0; i < gray.rows; i++)
+            {
+                for (int j = 0; j < gray.cols; j++)
+                {
+                    gray.at<uchar>(i, j) = (radiations.at(i*gray.cols+j) - minColor)*gapColor;
+                }
+            }
+
+
+        }
+        cv::imwrite("tmp.jpg",gray);
+    }else
+    {
+        cv::imwrite("tmp.jpg",bigImg);
     }
-    cv::imwrite("123.jpg",bigImg);
+
 
     int pixelStartFromX = startTile.x*TILE_SIZE;
     int pixelStartFromY = startTile.y*TILE_SIZE;
@@ -240,7 +334,7 @@ osg::ref_ptr<osg::Geode> createTerrain()
             }
         }
     }
-    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("123.jpg");
+    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("tmp.jpg");
 //    image->setImage(bigImg.cols, bigImg.rows, 3, GL_BGR, GL_BGR, GL_UNSIGNED_BYTE, bigImg.data, osg::Image::NO_DELETE, 1);
     geometry->setVertexArray(points.get());
     geometry->setTexCoordArray(0,texCoord.get());
@@ -262,9 +356,18 @@ int showTerrain()
 {
     osg::ref_ptr<osg::Group> scene = new osg::Group;
 //    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-//    osg::ref_ptr<osg::Node> node = new osg::Node();
-
+//    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("terrain.osg");
+//    osg::ref_ptr<osg::Node> model;
+//    const float radius = 1.0f;
+//    osg::Geode* geode = new osg::Geode;
+//    geode->addDrawable(new osg::ShapeDrawable(new osg::Sphere(osg::Vec3(0.0f,0.0f,0.0f),radius)));
+//    model = geode;
+//    SkyBox *skybox = new SkyBox;
     scene->addChild(createTerrain());
+//    scene->addChild(SkyBox::createSkyBox(true));
+//    scene->addChild(model.get());
+//    scene->addChild(node.get());
+
     osg::BoundingSphere bs;
     scene->getChild(0)->computeBound();
     bs = scene->getChild(0)->getBound();
@@ -273,7 +376,7 @@ int showTerrain()
     //设置方向
     light->setDirection(osg::Vec3(0.0f, 0.0f, -1.0f));
     //设置位置
-    light->setPosition(osg::Vec4(bs.center().x()+bs.radius(), bs.center().y(), bs.center().z()+(bs.radius()/2), 0.0f));
+    light->setPosition(osg::Vec4(bs.center().x(), bs.center().y(), bs.center().z()+(bs.radius()), 0.0f));
     //设置环境光的颜色
     light->setAmbient(osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     //设置散射光颜色
@@ -283,10 +386,10 @@ int showTerrain()
     light->setConstantAttenuation(1.0f);
     //设置线形衰减指数
     light->setLinearAttenuation(0.0f);
-    //设置二次方衰减指数
-    //        light->setQuadraticAttenuation(0.0f);
+//    //设置二次方衰减指数
+//    //        light->setQuadraticAttenuation(0.0f);
 
-    //创建光源
+//    //创建光源
     osg::ref_ptr<osg::LightSource> lightSource = new osg::LightSource();
     lightSource->setLight(light.get());
     scene->addChild(lightSource.get());
@@ -316,4 +419,26 @@ int main()
     cout << startTile.x << ", " << startTile.y << endl;
     cout << endTile.x << ", " << endTile.y << endl;
     showTerrain();
+//    #define CUBEMAP_FILENAME(face) "/home/lzt/material/sky_box/" #face ".jpg"
+//    #define CUBEMAP_FILENAME_IR(face) "/home/lzt/material/sky_box/" #face "-ir.jpg"
+//    cv::Mat matposx = cv::imread(CUBEMAP_FILENAME(posx));
+//    cv::Mat matnegx = cv::imread(CUBEMAP_FILENAME(negx));
+//    cv::Mat matposy = cv::imread(CUBEMAP_FILENAME(posy));
+//    cv::Mat matnegy = cv::imread(CUBEMAP_FILENAME(negy));
+//    cv::Mat matposz = cv::imread(CUBEMAP_FILENAME(posz));
+//    cv::Mat matnegz = cv::imread(CUBEMAP_FILENAME(negz));
+//    cv::Mat posxir, negxir, posyir, negyir, poszir, negzir;
+//    cv::cvtColor(matposx, posxir, cv::COLOR_BGR2GRAY);
+//    cv::imwrite(CUBEMAP_FILENAME_IR(posx), posxir);
+//    cv::cvtColor(matnegx, negxir, cv::COLOR_BGR2GRAY);
+//    cv::imwrite(CUBEMAP_FILENAME_IR(negx), negxir);
+//    cv::cvtColor(matposy, posyir, cv::COLOR_BGR2GRAY);
+//    cv::imwrite(CUBEMAP_FILENAME_IR(posy), posyir);
+//    cv::cvtColor(matnegy, negyir, cv::COLOR_BGR2GRAY);
+//    cv::imwrite(CUBEMAP_FILENAME_IR(negy), negyir);
+//    cv::cvtColor(matposz, poszir, cv::COLOR_BGR2GRAY);
+//    cv::imwrite(CUBEMAP_FILENAME_IR(posz), poszir);
+//    cv::cvtColor(matnegz, negzir, cv::COLOR_BGR2GRAY);
+//    cv::imwrite(CUBEMAP_FILENAME_IR(negz), negzir);
+
 }

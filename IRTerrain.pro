@@ -3,7 +3,8 @@ CONFIG += console c++11
 CONFIG -= app_bundle
 
 SOURCES += main.cpp \
-    demreader.cpp
+    demreader.cpp \
+    skybox.cpp
 
 LIBS += \
     -losg -losgDB -losgViewer -losgGA -losgUtil -losgQt \
@@ -12,5 +13,6 @@ LIBS += -L$$PWD/../../../../../usr/local/lib/ -lopencv_core \
 -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs
 HEADERS += \
     util.h \
-    demreader.h
+    demreader.h \
+    skybox.h
 
