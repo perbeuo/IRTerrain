@@ -4,7 +4,8 @@ CONFIG -= app_bundle
 
 SOURCES += main.cpp \
     demreader.cpp \
-    skybox.cpp
+    skybox.cpp \
+    myhandler.cpp
 
 LIBS += \
     -losg -losgDB -losgViewer -losgGA -losgUtil -losgQt \
@@ -14,5 +15,6 @@ LIBS += -L$$PWD/../../../../../usr/local/lib/ -lopencv_core \
 HEADERS += \
     util.h \
     demreader.h \
-    skybox.h
+    skybox.h \
+    myhandler.h
 

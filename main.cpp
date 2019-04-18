@@ -24,6 +24,7 @@
 #include "util.h"
 #include "demreader.h"
 #include "skybox.h"
+#include "myhandler.h"
 
 #define ROCK_TEXTURE 0
 #define SAND_TEXTURE 1
@@ -398,6 +399,7 @@ int showTerrain()
     optimizer.optimize(scene.get());
 
     osgViewer::Viewer viewer;
+    viewer.setCameraManipulator(new MyHandler());
     viewer.setSceneData(scene);
     viewer.realize();
     return viewer.run();
