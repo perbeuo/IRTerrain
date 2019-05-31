@@ -3,9 +3,12 @@
 #include "opencv2/opencv.hpp"
 #include "util.h"
 #include <gdal_priv.h>
-#define SIDE_THRESHOLD 5
-#define THETA_THRESHOLD 20
-#define PHI_THRESHOLD 15
+#include <osg/Geode>
+#include <osgUtil/DelaunayTriangulator>
+#include <osg/Geometry>
+#define SIDE_THRESHOLD 3
+//#define THETA_THRESHOLD 15
+//#define PHI_THRESHOLD 10
 #define MAX_COUNT_NUM 4
 #define TILE_SIZE 256
 
@@ -19,9 +22,11 @@ typedef struct _TRIANGLE_DESC_
 class DEMReader
 {
 public:
-    DEMReader(std::string filename);
+    DEMReader(std::string filename, double theta_threshold, double phi_threshold);
     ~DEMReader();
+    osg::ref_ptr<osg::Geode> getTerrain(int startX, int startY, int sizeX, int sizeY);
     std::vector<TRIANGLE_DESC> getCVTriangles(int startX, int startY, int sizeX, int sizeY, bool needFeature);
+    std::vector<TRIANGLE_DESC> getCVTrianglesNFeature(int startX, int startY, int sizeX, int sizeY, bool needFeature, QList<Point> *feature);
     void getGoogleMapPixel(double lng, double lat, cv::Point *pixelCoord, int zoomLevel);
     void getGoogleMapTile(double lng, double lat, cv::Point *tileCoord, int zoomLevel);
     void calTextureRange();
@@ -51,6 +56,8 @@ private:
     int texStartYNum;
     int texEndXNum;
     int texEndYNum;
+    double theta_threshold;
+    double phi_threshold;
     std::string filename;
     GDALRasterBand *poBand;
     GDALDataset *poDataset;

@@ -173,11 +173,11 @@ bool MyHandler::handle(
     case osgGA::GUIEventAdapter::SCROLL:
         if (eventAdapter.getScrollingMotion() == osgGA::GUIEventAdapter::SCROLL_UP)
         {
-            panModel(.0f, .0f, 200.0f);
+            panModel(.0f, .0f, 2000.0f);
         }
         else if (eventAdapter.getScrollingMotion() == osgGA::GUIEventAdapter::SCROLL_DOWN)
         {
-            panModel(.0f, .0f, -200.0f);
+            panModel(.0f, .0f, -2000.0f);
         }
 
         break;

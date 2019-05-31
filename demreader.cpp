@@ -1,9 +1,11 @@
 #include "demreader.h"
 using namespace std;
 
-DEMReader::DEMReader(string filename)
+DEMReader::DEMReader(string filename, double theta_threshold, double phi_threshold)
 {
 //    const char *pszFilename="/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif";
+    this->theta_threshold = theta_threshold;
+    this->phi_threshold = phi_threshold;
     GDALAllRegister();
     poDataset = (GDALDataset*)GDALOpen(filename.c_str(), GA_ReadOnly);
     if (poDataset == NULL)
@@ -192,6 +194,59 @@ QList<Point> DEMReader::getPoints(int startX, int startY, int sizeX, int sizeY)
     return pts;
 }
 
+osg::ref_ptr<osg::Geode> DEMReader::getTerrain(int startX, int startY, int sizeX, int sizeY)
+{
+    this->startX = startX;
+    this->startY = startY;
+    this->sizeX = sizeX;
+    this->sizeY = sizeY;
+    QList<Point> pts;
+    QVector<double> elev;
+
+    float *pafScanline;
+    int nXSize = sizeX;
+    int nYSize = sizeY;
+    pafScanline = (float *)CPLMalloc(sizeof(float)*nXSize*nYSize);
+    poBand->RasterIO(GF_Read, startX, startY, nXSize, nYSize,
+                     pafScanline, nXSize, nYSize, GDT_Float32,
+                     0, 0);
+    for (int i = 0; i < nYSize; i++)
+    {
+        for (int j = 0; j < nXSize; j++)
+        {
+            double x, y;
+            double elevation = *pafScanline;
+            x = (j+startX)*30;
+            y = (i+startY)*30;
+            pts.push_back(Point(x, y, elevation));
+            elev.push_back(elevation);
+            pafScanline++;
+        }
+    }
+        QList<Point> feature = featurePointSelection(pts, sizeX, sizeY/*, resNorms*/);
+        osg::ref_ptr<osg::Vec3Array> coords = new osg::Vec3Array();
+        osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array();
+        for (const auto point : feature)
+        {
+            coords->push_back(osg::Vec3(point.x, point.y, point.z));
+        }
+
+        osg::ref_ptr<osgUtil::DelaunayTriangulator> dt = new osgUtil::DelaunayTriangulator();
+        dt->setInputPointArray(coords);//赋给它三维点集数组
+        dt->setOutputNormalArray(normals);//输出法向量
+        dt->triangulate();
+        osg::ref_ptr<deprecated_osg::Geometry> geometry = new deprecated_osg::Geometry();
+        geometry->setVertexArray(coords.get());
+        geometry->addPrimitiveSet(dt->getTriangles());
+        geometry->setNormalArray(normals.get());
+//        Geometry::fixDeprecatedData();
+        geometry->setNormalBinding(deprecated_osg::Geometry::AttributeBinding::BIND_PER_PRIMITIVE);
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+        geode->addDrawable(geometry.get());
+
+        return geode;
+}
+
 vector<TRIANGLE_DESC> DEMReader::getCVTriangles(int startX, int startY, int sizeX, int sizeY, bool needFeature)
 {
     this->startX = startX;
@@ -309,6 +364,65 @@ vector<TRIANGLE_DESC> DEMReader::getCVTriangles(int startX, int startY, int size
     return triangles;
 }
 
+vector<TRIANGLE_DESC> DEMReader::getCVTrianglesNFeature(int startX, int startY, int sizeX, int sizeY, bool needFeature, QList<Point> *feature)
+{
+    this->startX = startX;
+    this->startY = startY;
+    this->sizeX = sizeX;
+    this->sizeY = sizeY;
+    QList<Point> pts;
+    QVector<double> elev;
+
+    float *pafScanline;
+    int nXSize = sizeX;
+    int nYSize = sizeY;
+    pafScanline = (float *)CPLMalloc(sizeof(float)*nXSize*nYSize);
+    poBand->RasterIO(GF_Read, startX, startY, nXSize, nYSize,
+                     pafScanline, nXSize, nYSize, GDT_Float32,
+                     0, 0);
+    for (int i = 0; i < nYSize; i++)
+    {
+        for (int j = 0; j < nXSize; j++)
+        {
+            double x, y;
+            double elevation = *pafScanline;
+            x = (j+startX)*30;
+            y = (i+startY)*30;
+            pts.push_back(Point(x, y, elevation));
+            elev.push_back(elevation);
+            pafScanline++;
+        }
+    }
+
+    *feature = featurePointSelection(pts, sizeX, sizeY/*, resNorms*/);
+
+    //opencv delaunay
+    const int width = sizeX*32;
+    const int height = sizeY*32;
+    double offX, offY;
+    offX = startX*30;
+    offY = startY*30;
+    vector<cv::Point3d> testPoints;
+    if (needFeature)
+    {
+        for (int i = 0; i < feature->size(); i++)
+        {
+            testPoints.push_back(cv::Point3d(feature->at(i).x, feature->at(i).y, feature->at(i).z));
+        }
+    }else
+    {
+        for (int i = 0; i < pts.size(); i++)
+        {
+            testPoints.push_back(cv::Point3d(pts[i].x, pts[i].y, pts[i].z));
+        }
+    }
+    //    const cv::Rect pageRc(offX-1, offY-height+1, width, height);
+    const cv::Rect pageRc(offX-1, offY-1, width, height);
+    const auto triangles = delaunayAlgorithm(pageRc,testPoints, elev,/* *resNorms,*/ nXSize, offX, offY);
+
+    return triangles;
+}
+
 QList<Point> DEMReader::featurePointSelection(QList<Point> pts, int row, int col)
 {
     QList<Point> respts;
@@ -379,6 +493,16 @@ QList<Point> DEMReader::featurePointSelection(QList<Point> pts, int row, int col
 //                    if (diff3 > SIDE_THRESHOLD)
 //                    {
 //                        respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                    }else if (i == 0 && pts[i*col+j].z == 0 && (pts[i*col+j-1].z != 0 || pts[i*col+j+1].z != 0
+//                                                                || pts[(i+1)*col+j].z != 0 || pts[(i+1)*col+j-1].z != 0
+//                                                                || pts[(i+1)*col+j+1].z != 0))
+//                    {
+//                        respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                    }else if (i == row-1 && pts[i*col+j].z == 0 && (pts[i*col+j-1].z != 0 || pts[i*col+j+1].z != 0
+//                                                                    || pts[(i-1)*col+j].z != 0 || pts[(i-1)*col+j-1].z != 0
+//                                                                    || pts[(i-1)*col+j+1].z != 0))
+//                    {
+//                        respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
 //                    }
 
 //                }
@@ -394,6 +518,16 @@ QList<Point> DEMReader::featurePointSelection(QList<Point> pts, int row, int col
 //                diff2 = pts[(i+1)*col+j].z - pts[i*col+j].z;
 //                diff3 = fabs(diff1-diff2);
 //                if (diff3 > SIDE_THRESHOLD)
+//                {
+//                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                }else if (j == 0 && pts[i*col+j].z == 0 && (pts[(i-1)*col+j].z != 0 || pts[(i+1)*col+j].z != 0
+//                                                            || pts[i*col+j+1].z != 0 || pts[(i-1)*col+j+1].z != 0
+//                                                            || pts[(i+1)*col+j+1].z != 0))
+//                {
+//                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+//                }else if (j == col-1 && pts[i*col+j].z == 0 && (pts[(i-1)*col+j].z != 0 || pts[(i+1)*col+j].z != 0
+//                                                                || pts[i*col+j-1].z != 0 || pts[(i+1)*col+j-1].z != 0
+//                                                                || pts[(i-1)*col+j-1].z != 0))
 //                {
 //                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
 //                }
@@ -422,10 +556,10 @@ QList<Point> DEMReader::featurePointSelection(QList<Point> pts, int row, int col
                 tmpPhis.push_back(phis[i+1][j]);
                 tmpPhis.push_back(phis[i+1][j+1]);
 
-                if (i == 4 && j == 134)
-                {
-                    cout << "here" << endl;
-                }
+//                if (i == 4 && j == 134)
+//                {
+//                    cout << "here" << endl;
+//                }
                 for (int k = 0; k < tmpThetas.size(); k++)
                 {
                     double difftheta, diffphi;
@@ -449,12 +583,22 @@ QList<Point> DEMReader::featurePointSelection(QList<Point> pts, int row, int col
                 {
                     //                    cout << "theta:" << diffThetas[k] << endl;
                     //                    cout << "phi:" << diffPhis[k] << endl;
-                    if (diffThetas[k] > THETA_THRESHOLD)
+                    if (diffThetas[k] > theta_threshold)
                         count++;
-                    if (diffPhis[k] > PHI_THRESHOLD)
+                    if (diffPhis[k] > phi_threshold)
                         count++;
                 }
                 if (count > MAX_COUNT_NUM)
+                {
+                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+                }/*else if(((pts[i*col+j].z == pts[i*col+j-1].z)&&(pts[i*col+j].z != pts[i*col+j+1].z)) ||
+                         (pts[i*col+j].z == pts[i*col+j+1].z)&&(pts[i*col+j].z != pts[i*col+j-1].z))
+                {
+                    respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
+                }*/else if (pts[i*col+j].z == 0 && (pts[i*col+j-1].z != 0 || pts[i*col+j+1].z != 0
+                                                    || pts[(i-1)*col+j].z != 0 || pts[(i+1)*col+j].z != 0
+                                                    || pts[(i-1)*col+j-1].z != 0 || pts[(i-1)*col+j+1].z != 0
+                                                    || pts[(i+1)*col+j-1].z != 0 || pts[(i+1)*col+j+1].z != 0))
                 {
                     respts.push_back(Point(pts[i*col+j].x, pts[i*col+j].y, pts[i*col+j].z));
                 }

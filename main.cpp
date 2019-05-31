@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <iomanip>
+#include <sstream>
 #include <osgViewer/Viewer>
 #include <osg/Geode>
 #include <osgDB/ReadFile>
@@ -50,6 +51,38 @@
 
 using namespace std;
 
+static char * heightmap_vertex_shader = {
+    "uniform mat4 u_Matrix;\n"
+    "attribute vec3 a_Position;\n"
+    "varying vec3 v_Color;\n"
+    "void main(){\n"
+    "   if (gl_Vertex.z >= 528)\n"
+    "       v_Color = mix(vec3(1, 1, 0),"//Yellow
+    "                   vec3(1, 0, 0),"//Red
+    "                   (gl_Vertex.z-528)/265);\n"
+    "   else if (gl_Vertex.z > 264 && gl_Vertex.z < 528)\n"
+    "       v_Color = mix(vec3(0, 1, 0),"//Green
+    "                   vec3(1, 1, 0),"//Yellow
+    "                   (gl_Vertex.z-264)/264);\n"
+    "   else if (gl_Vertex.z <= 264 && gl_Vertex.z > 1)\n"
+    "       v_Color = mix(vec3(0, 1, 1),"//Cyan
+    "                   vec3(0, 1, 0),"//Green
+    "                   (gl_Vertex.z-1)/263);\n"
+    "   else\n"
+    "       v_Color = mix(vec3(0, 0, 1),"//Blue
+    "                   vec3(0, 1, 1),"//Cyan
+    "                   (gl_Vertex.z)/1);\n"
+    "   gl_Position = ftransform();\n"
+    "}\n"
+};
+
+static char * heightmap_fragment_shader = {
+    "precision mediump float;\n"
+    "varying vec3 v_Color;\n"
+    "void main(){\n"
+    "   gl_FragColor = vec4(v_Color, 1.0)\n;"
+    "}\n"
+};
 
 osg::Node* createHeightField(std::string heightFile, std::string texFile) {
 
@@ -156,19 +189,381 @@ osg::ref_ptr<osg::Texture2D> createTexture2D(osg::ref_ptr<osg::Image> image)
     return texture.release();
 }
 
+double plankSimpleNew(double T, double emissivity)
+{
+    double E, E1, E2;
+    double X1 = 1 / (3.0e-6);
+    double X2 = 1 / (5.0e-6);
+    E2 = emissivity * ((C1*T) / C2) * exp((-C2*X2) / T) * (pow(X2, 3) + (((3 * T) / C2)*(pow(X2, 2) + (((2 * T) / C2)*(X2 + (((1*T) / C2)))))));
+    E1 = emissivity * ((C1*T) / C2) * exp((-C2*X1) / T) * (pow(X1, 3) + (((3 * T) / C2)*(pow(X1, 2) + (((2 * T) / C2)*(X1 + (((1*T) / C2)))))));
+    E = E2 - E1;
+    return E;
+}
+
+void saveRawTerrain()
+{
+    int startFromX = 0, startFromY = 0;
+    int xNum = 2, yNum = 2;
+    int xSize = 100, ySize = 100;
+    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif", 15, 10);
+    osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
+
+    osg::ref_ptr<osg::Shader> vertShader = new osg::Shader( osg::Shader::VERTEX, heightmap_vertex_shader );
+    osg::ref_ptr<osg::Shader> fragShader = new osg::Shader( osg::Shader::FRAGMENT, heightmap_fragment_shader );
+
+    osg::ref_ptr<osg::Program> program = new osg::Program;
+    program->addShader( vertShader.get() );
+    program->addShader( fragShader.get() );
+
+    for (int i = 0; i < yNum; i++)
+    {
+        for (int j = 0; j < xNum; j++)
+        {
+            vector<TRIANGLE_DESC> triangles;
+            osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
+            QList<Point> *feature = new QList<Point>;
+            triangles = demReader->getCVTrianglesNFeature(j*xSize + startFromX, i*ySize + startFromY, xSize+1, ySize+1, true, feature);
+            int height = demReader->getHeight();
+            std::vector<GLuint> pt_indices;
+
+            for (const auto triangle : triangles)
+            {
+                QList<Point>::iterator it = std::find(feature->begin(), feature->end(), Point(triangle.pt3.x, triangle.pt3.y, triangle.pt3.z));
+                int a = distance(feature->begin(), it);
+                pt_indices.push_back(a);
+                it = std::find(feature->begin(), feature->end(), Point(triangle.pt2.x, triangle.pt2.y, triangle.pt2.z));
+                a = distance(feature->begin(), it);
+                pt_indices.push_back(a);
+                it = std::find(feature->begin(), feature->end(), Point(triangle.pt1.x, triangle.pt1.y, triangle.pt1.z));
+                a = distance(feature->begin(), it);
+                pt_indices.push_back(a);
+            }
+            QList<Point>::iterator it;
+            for (it = feature->begin(); it != feature->end(); it++)
+            {
+                points->push_back(osg::Vec3(it->x, (height-1)*30-(it->y), it->z));
+            }
+            geometry->setVertexArray(points.get());
+            geometry->addPrimitiveSet(new osg::DrawElementsUInt(GL_TRIANGLES, pt_indices.size(), &(pt_indices.front())));
+
+            osg::StateSet* stateset = geometry->getOrCreateStateSet();
+            stateset->setAttributeAndModes( program.get() );
+
+            osgUtil::SmoothingVisitor smv;
+            smv.smooth(*geometry);
+
+
+            stringstream ss;
+            ss << "terrain_2/test_";
+            ss << j << "_";
+            ss << i << ".osg";
+            std::string filename;
+            ss >> filename;
+            osgDB::writeNodeFile(*geometry, filename);
+            points->clear();
+        }
+    }
+}
+
+void saveRawTerrain_WholeOne()
+{
+    int startFromX = 0, startFromY = 0;
+    int xNum = 36, yNum = 36;
+    int xSize = 100, ySize = 100;
+    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif", 15, 10);
+    osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
+    std::vector<GLuint> pt_indices;
+    osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
+    for (int i = 0; i < yNum; i++)
+    {
+        for (int j = 0; j < xNum; j++)
+        {
+            vector<TRIANGLE_DESC> triangles;
+            QList<Point> *feature = new QList<Point>;
+            triangles = demReader->getCVTrianglesNFeature(j*xSize + startFromX, i*ySize + startFromY, xSize+1, ySize+1, true, feature);
+            int height = demReader->getHeight();
+//            std::vector<GLuint> pt_indices;
+
+            for (const auto triangle : triangles)
+            {
+                QList<Point>::iterator it = std::find(feature->begin(), feature->end(), Point(triangle.pt3.x, triangle.pt3.y, triangle.pt3.z));
+                int a = distance(feature->begin(), it);
+                a += points->size();
+                pt_indices.push_back(a);
+                it = std::find(feature->begin(), feature->end(), Point(triangle.pt2.x, triangle.pt2.y, triangle.pt2.z));
+                a = distance(feature->begin(), it);
+                a += points->size();
+                pt_indices.push_back(a);
+                it = std::find(feature->begin(), feature->end(), Point(triangle.pt1.x, triangle.pt1.y, triangle.pt1.z));
+                a = distance(feature->begin(), it);
+                a += points->size();
+                pt_indices.push_back(a);
+            }
+            QList<Point>::iterator it;
+            for (it = feature->begin(); it != feature->end(); it++)
+            {
+                points->push_back(osg::Vec3(it->x, (height-1)*30-(it->y), it->z));
+            }
+        }
+    }
+    geometry->setVertexArray(points.get());
+    geometry->addPrimitiveSet(new osg::DrawElementsUInt(GL_TRIANGLES, pt_indices.size(), &(pt_indices.front())));
+
+    osgUtil::SmoothingVisitor smv;
+    smv.smooth(*geometry);
+
+    osgDB::writeNodeFile(*geometry, "terrain_1_fake/test.osg");
+}
+
 osg::ref_ptr<osg::Geode> createTerrain()
 {
     osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-//    osg::ref_ptr<osg::Image> image = new osg::Image; //= osgDB::readImageFile("/home/lzt/material/img_map/gs_637_474_10.jpg");
+    //    osg::ref_ptr<osg::Image> image = new osg::Image; //= osgDB::readImageFile("/home/lzt/material/img_map/gs_637_474_10.jpg");
     osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
     osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
     osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
-    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
-    int startFromX = 3000, startFromY = 750;
-    int xNum = 3, yNum = 3;
+    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif", 15, 10);
+    //int startFromX = 2900, startFromY = 650;
+    //int xNum = 4, yNum = 4;
+    int startFromX = 0, startFromY = 0;
+    int xNum = 36, yNum = 36;
     int xSize = 100, ySize = 100;
     int zoomLevel = 15;
-    bool infrared = true;
+    bool infrared = false;
+    bool textured = false;
+    double diffx = demReader->getDiffX();
+    double diffy = demReader->getDiffY();
+    double startLng = demReader->getOriginX() + startFromX*diffx;//start lng from the area you have chosen, has offset
+    double startLat = demReader->getOriginY() + startFromY*diffy;
+    double endLng = startLng + diffx*xSize*xNum;
+    double endLat = startLat + diffy*ySize*yNum;
+    if (textured)
+    {
+        cv::Point startTile;
+        cv::Point endTile;
+        demReader->getGoogleMapTile(startLng, startLat, &startTile, zoomLevel);
+        demReader->getGoogleMapTile(endLng, endLat, &endTile, zoomLevel);
+        cout << startTile.x << ", " << startTile.y << endl;
+        cout << endTile.x << ", " << endTile.y << endl;
+        int xPicNum = endTile.x-startTile.x;
+        int yPicNum = endTile.y-startTile.y;
+        cv::Mat bigImg(TILE_SIZE*(yPicNum+1), TILE_SIZE*(xPicNum+1), 16);
+
+        for (int i = 0; i <= yPicNum; i++)
+        {
+            for (int j = 0; j <= xPicNum; j++)
+            {
+                QString imgFileName = "/home/lzt/material/img_map/";
+                imgFileName.append(QString::number(zoomLevel));
+                imgFileName.append("/gs_");
+                imgFileName.append(QString::number(startTile.x+j));
+                imgFileName.append("_");
+                imgFileName.append(QString::number(startTile.y+i));
+                imgFileName.append("_");
+                imgFileName.append(QString::number(zoomLevel));
+                imgFileName.append(".jpg");
+                cv::Mat img = cv::imread(imgFileName.toStdString());
+                cv::Mat tmp = bigImg.colRange(img.cols*j, img.cols*(j+1)).rowRange(img.rows*i, img.rows*(i+1));
+                img.copyTo(tmp);
+                cout << imgFileName.toStdString() << endl;
+            }
+        }
+        if(infrared)
+        {
+            cv::Mat gray;
+            cv::cvtColor(bigImg,gray,cv::COLOR_BGR2GRAY);
+            cv::Mat materialMap = cv::imread("/home/lzt/material/img_map/tmp-IR.bmp", cv::IMREAD_GRAYSCALE);
+            cout << materialMap.type() << endl;
+            QVector<double> radiations;
+            if ((materialMap.rows == gray.rows) && (materialMap.cols == gray.cols))
+            {
+                for (int i = 0; i < gray.rows; i++)
+                {
+                    for (int j = 0; j < gray.cols; j++)
+                    {
+                        int fixColor;
+                        double fixRate;
+                        double E;
+                        switch ((int)materialMap.at<uchar>(i, j)) {
+                        case ROCK_TEXTURE_GRAY:
+                            fixColor = 50;
+                            fixRate = 1.25;
+                            E = plankSimpleNew(50+K0, 0.8);
+                            break;
+                        case SAND_TEXTURE_GRAY:
+                            fixColor = 40;
+                            fixRate = 1.2;
+                            E = plankSimpleNew(40+K0, 0.76);
+                            break;
+                        case TREE_TEXTURE_GRAY:
+                            fixColor = -70;
+                            fixRate = 0.8;
+                            E = plankSimpleNew(28+K0, 0.75);
+                            break;
+                        case WATER_TEXTURE_GRAY:
+                            fixColor = -80;
+                            fixRate = 0.75;
+                            E = plankSimpleNew(31+K0, 0.95);
+                            break;
+                        default:
+                            break;
+                        }
+                        int finalColor = (int)gray.at<uchar>(i, j) + fixColor;
+                        //                    if (finalColor > 255)
+                        //                        finalColor = 255;
+                        //                    else if(finalColor < 0)
+                        //                        finalColor = 0;
+                        int finalRateColor = (int)gray.at<uchar>(i, j)*fixRate;
+                        //                    if (finalRateColor == 0 || finalRateColor == 255)
+                        //                        cout << i << ", " << j << endl;
+                        //                    gray.at<uchar>(i, j) = finalRateColor;
+                        int EFixColor = (int)(gray.at<uchar>(i, j)/2)+E*35;
+                        radiations.push_back(EFixColor);
+                    }
+                }
+                int minColor = 256, maxColor = -1;
+                for (int i = 0; i < gray.rows; i++)
+                {
+                    for (int j = 0; j < gray.cols; j++)
+                    {
+                        //                    minColor = min(minColor, (int)gray.at<uchar>(i, j));
+                        //                    maxColor = max(maxColor, (int)gray.at<uchar>(i, j));
+                        minColor = min(minColor, (int)radiations.at(i*gray.cols+j));
+                        maxColor = max(maxColor, (int)radiations.at(i*gray.cols+j));
+                    }
+                }
+                int intervals = maxColor - minColor;
+                double gapColor = 255.0 / intervals;
+                for (int i = 0; i < gray.rows; i++)
+                {
+                    for (int j = 0; j < gray.cols; j++)
+                    {
+                        gray.at<uchar>(i, j) = (radiations.at(i*gray.cols+j) - minColor)*gapColor;
+                    }
+                }
+
+
+            }
+            cv::imwrite("tmp.jpg",gray);
+        }else
+        {
+            cv::imwrite("tmp.jpg",bigImg);
+        }
+
+        int pixelStartFromX = startTile.x*TILE_SIZE;
+        int pixelStartFromY = startTile.y*TILE_SIZE;
+
+        for (int i = 0; i < yNum; i++)
+        {
+            for (int j = 0; j < xNum; j++)
+            {
+                //            if (i==1&&j==1)
+                //                break;
+                vector<TRIANGLE_DESC> triangles;
+                //            osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
+                triangles = demReader->getCVTriangles(j*xSize + startFromX, i*ySize + startFromY, xSize+1, ySize+1, true);
+                //            osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
+                //            osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
+                int height = demReader->getHeight();
+
+                for (const auto triangle : triangles)
+                {
+                    //insert the points reversely because that the y value has became an opposite of the original value
+                    points->push_back(osg::Vec3(triangle.pt3.x, (height-1)*30-triangle.pt3.y, triangle.pt3.z));
+                    points->push_back(osg::Vec3(triangle.pt2.x, (height-1)*30-triangle.pt2.y, triangle.pt2.z));
+                    points->push_back(osg::Vec3(triangle.pt1.x, (height-1)*30-triangle.pt1.y, triangle.pt1.z));
+                    //                double scale = triangle.pt3.x/(30*xSize);
+
+                    //calculate texture coordinates for Google map
+                    double lng, lat;
+                    int pixelX, pixelY;
+                    cv::Point pixelCoord;
+                    lng = startLng + ((triangle.pt3.x/30)-startFromX)*diffx;
+                    lat = startLat + ((triangle.pt3.y/30)-startFromY)*diffy;
+                    demReader->getGoogleMapPixel(lng, lat, &pixelCoord, zoomLevel);
+                    pixelX = pixelCoord.x - pixelStartFromX;
+                    pixelY = pixelCoord.y - pixelStartFromY;
+                    texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
+
+                    lng = startLng + ((triangle.pt2.x/30)-startFromX)*diffx;
+                    lat = startLat + ((triangle.pt2.y/30)-startFromY)*diffy;
+                    demReader->getGoogleMapPixel(lng, lat, &pixelCoord, zoomLevel);
+                    pixelX = pixelCoord.x - pixelStartFromX;
+                    pixelY = pixelCoord.y - pixelStartFromY;
+                    texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
+
+                    lng = startLng + ((triangle.pt1.x/30)-startFromX)*diffx;
+                    lat = startLat + ((triangle.pt1.y/30)-startFromY)*diffy;
+                    demReader->getGoogleMapPixel(lng, lat, &pixelCoord, zoomLevel);
+                    pixelX = pixelCoord.x - pixelStartFromX;
+                    pixelY = pixelCoord.y - pixelStartFromY;
+                    texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
+                    //                texCoord->push_back(osg::Vec2(triangle.pt3.x/(30*(xSize+1)), 1-triangle.pt3.y/(30*(ySize+1))));
+                    //                texCoord->push_back(osg::Vec2(triangle.pt2.x/(30*(xSize+1)), 1-triangle.pt2.y/(30*(ySize+1))));
+                    //                texCoord->push_back(osg::Vec2(triangle.pt1.x/(30*(xSize+1)), 1-triangle.pt1.y/(30*(ySize+1))));
+                }
+            }
+        }
+        //    image->setImage(bigImg.cols, bigImg.rows, 3, GL_BGR, GL_BGR, GL_UNSIGNED_BYTE, bigImg.data, osg::Image::NO_DELETE, 1);
+        geometry->setVertexArray(points.get());
+        geometry->setTexCoordArray(0,texCoord.get());
+        cout << "pt size" << points->size() << endl;
+        geometry->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, points->size()));
+        osg::ref_ptr<osg::Image> image = osgDB::readImageFile("tmp.jpg");
+        geometry->getOrCreateStateSet()->setTextureAttributeAndModes(0, createTexture2D(image), osg::StateAttribute::ON);
+
+    }
+    else
+    {
+        for (int i = 0; i < yNum; i++)
+        {
+            for (int j = 0; j < xNum; j++)
+            {
+                vector<TRIANGLE_DESC> triangles;
+                triangles = demReader->getCVTriangles(j*xSize + startFromX, i*ySize + startFromY, xSize+1, ySize+1, true);
+                int height = demReader->getHeight();
+
+                for (const auto triangle : triangles)
+                {
+                    //insert the points reversely because that the y value has became an opposite of the original value
+                    points->push_back(osg::Vec3(triangle.pt3.x, (height-1)*30-triangle.pt3.y, triangle.pt3.z));
+                    points->push_back(osg::Vec3(triangle.pt2.x, (height-1)*30-triangle.pt2.y, triangle.pt2.z));
+                    points->push_back(osg::Vec3(triangle.pt1.x, (height-1)*30-triangle.pt1.y, triangle.pt1.z));
+                }
+            }
+        }
+        geometry->setVertexArray(points.get());
+        cout << "pt size" << points->size() << endl;
+        geometry->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, points->size()));
+    }
+
+
+
+    osgUtil::SmoothingVisitor smv;
+    smv.smooth(*geometry);
+
+    geode->addDrawable(geometry.get());
+    osg::ref_ptr<osg::PolygonMode> polyMode= new osg::PolygonMode;
+    polyMode->setMode(osg::PolygonMode::FRONT_AND_BACK ,osg::PolygonMode::LINE);
+    geode->getOrCreateStateSet()->setAttribute(polyMode);
+    return geode.release();
+}
+
+osg::ref_ptr<osg::Geode> createTerrain_tmp()
+{
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+    //    osg::ref_ptr<osg::Image> image = new osg::Image; //= osgDB::readImageFile("/home/lzt/material/img_map/gs_637_474_10.jpg");
+    osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
+    osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
+    osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
+    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif", 0, 0);
+    //    int startFromX = 3000, startFromY = 750;
+    //    int xNum = 3, yNum = 3;
+    int startFromX = 0, startFromY = 0;
+    int xNum = 1, yNum = 1;
+    int xSize = 100, ySize = 100;
+    int zoomLevel = 15;
+    bool infrared = false;
     double diffx = demReader->getDiffX();
     double diffy = demReader->getDiffY();
     double startLng = demReader->getOriginX() + startFromX*diffx;//start lng from the area you have chosen, has offset
@@ -240,14 +635,14 @@ osg::ref_ptr<osg::Geode> createTerrain()
                         break;
                     }
                     int finalColor = (int)gray.at<uchar>(i, j) + fixColor;
-//                    if (finalColor > 255)
-//                        finalColor = 255;
-//                    else if(finalColor < 0)
-//                        finalColor = 0;
+                    //                    if (finalColor > 255)
+                    //                        finalColor = 255;
+                    //                    else if(finalColor < 0)
+                    //                        finalColor = 0;
                     int finalRateColor = (int)gray.at<uchar>(i, j)*fixRate;
-//                    if (finalRateColor == 0 || finalRateColor == 255)
-//                        cout << i << ", " << j << endl;
-//                    gray.at<uchar>(i, j) = finalRateColor;
+                    //                    if (finalRateColor == 0 || finalRateColor == 255)
+                    //                        cout << i << ", " << j << endl;
+                    //                    gray.at<uchar>(i, j) = finalRateColor;
                     radiations.push_back(finalColor);
                 }
             }
@@ -256,8 +651,8 @@ osg::ref_ptr<osg::Geode> createTerrain()
             {
                 for (int j = 0; j < gray.cols; j++)
                 {
-//                    minColor = min(minColor, (int)gray.at<uchar>(i, j));
-//                    maxColor = max(maxColor, (int)gray.at<uchar>(i, j));
+                    //                    minColor = min(minColor, (int)gray.at<uchar>(i, j));
+                    //                    maxColor = max(maxColor, (int)gray.at<uchar>(i, j));
                     minColor = min(minColor, (int)radiations.at(i*gray.cols+j));
                     maxColor = max(maxColor, (int)radiations.at(i*gray.cols+j));
                 }
@@ -274,10 +669,10 @@ osg::ref_ptr<osg::Geode> createTerrain()
 
 
         }
-        cv::imwrite("tmp.jpg",gray);
+        cv::imwrite("tmp1.jpg",gray);
     }else
     {
-        cv::imwrite("tmp.jpg",bigImg);
+        cv::imwrite("tmp1.jpg",bigImg);
     }
 
 
@@ -288,21 +683,21 @@ osg::ref_ptr<osg::Geode> createTerrain()
     {
         for (int j = 0; j < xNum; j++)
         {
-//            if (i==1&&j==1)
-//                break;
+            //            if (i==1&&j==1)
+            //                break;
             vector<TRIANGLE_DESC> triangles;
-//            osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
+            //            osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
             triangles = demReader->getCVTriangles(j*xSize + startFromX, i*ySize + startFromY, xSize+1, ySize+1, true);
-//            osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
-//            osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
+            //            osg::ref_ptr<osg::Vec3Array> points = new osg::Vec3Array();
+            //            osg::ref_ptr<osg::Vec2Array> texCoord = new osg::Vec2Array();
             int height = demReader->getHeight();
 
             for (const auto triangle : triangles)
             {
                 //insert the points reversely because that the y value has became an opposite of the original value
-                points->push_back(osg::Vec3(triangle.pt3.x, (height-1)*30-triangle.pt3.y, triangle.pt3.z));
-                points->push_back(osg::Vec3(triangle.pt2.x, (height-1)*30-triangle.pt2.y, triangle.pt2.z));
-                points->push_back(osg::Vec3(triangle.pt1.x, (height-1)*30-triangle.pt1.y, triangle.pt1.z));
+                points->push_back(osg::Vec3(triangle.pt3.x - (xSize*xNum + 10)*30, (height-1)*30-triangle.pt3.y, triangle.pt3.z));
+                points->push_back(osg::Vec3(triangle.pt2.x - (xSize*xNum + 10)*30, (height-1)*30-triangle.pt2.y, triangle.pt2.z));
+                points->push_back(osg::Vec3(triangle.pt1.x - (xSize*xNum + 10)*30, (height-1)*30-triangle.pt1.y, triangle.pt1.z));
                 //                double scale = triangle.pt3.x/(30*xSize);
 
                 //calculate texture coordinates for Google map
@@ -329,14 +724,14 @@ osg::ref_ptr<osg::Geode> createTerrain()
                 pixelX = pixelCoord.x - pixelStartFromX;
                 pixelY = pixelCoord.y - pixelStartFromY;
                 texCoord->push_back(osg::Vec2(pixelX/(bigImg.cols*1.0f), 1-pixelY/(bigImg.rows*1.0f)));
-//                texCoord->push_back(osg::Vec2(triangle.pt3.x/(30*(xSize+1)), 1-triangle.pt3.y/(30*(ySize+1))));
-//                texCoord->push_back(osg::Vec2(triangle.pt2.x/(30*(xSize+1)), 1-triangle.pt2.y/(30*(ySize+1))));
-//                texCoord->push_back(osg::Vec2(triangle.pt1.x/(30*(xSize+1)), 1-triangle.pt1.y/(30*(ySize+1))));
+                //                texCoord->push_back(osg::Vec2(triangle.pt3.x/(30*(xSize+1)), 1-triangle.pt3.y/(30*(ySize+1))));
+                //                texCoord->push_back(osg::Vec2(triangle.pt2.x/(30*(xSize+1)), 1-triangle.pt2.y/(30*(ySize+1))));
+                //                texCoord->push_back(osg::Vec2(triangle.pt1.x/(30*(xSize+1)), 1-triangle.pt1.y/(30*(ySize+1))));
             }
         }
     }
-    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("tmp.jpg");
-//    image->setImage(bigImg.cols, bigImg.rows, 3, GL_BGR, GL_BGR, GL_UNSIGNED_BYTE, bigImg.data, osg::Image::NO_DELETE, 1);
+    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("tmp1.jpg");
+    //    image->setImage(bigImg.cols, bigImg.rows, 3, GL_BGR, GL_BGR, GL_UNSIGNED_BYTE, bigImg.data, osg::Image::NO_DELETE, 1);
     geometry->setVertexArray(points.get());
     geometry->setTexCoordArray(0,texCoord.get());
     cout << "pt size" << points->size() << endl;
@@ -347,27 +742,29 @@ osg::ref_ptr<osg::Geode> createTerrain()
     smv.smooth(*geometry);
 
     geode->addDrawable(geometry.get());
-//    osg::ref_ptr<osg::PolygonMode> polyMode= new osg::PolygonMode;
-//    polyMode->setMode(osg::PolygonMode::FRONT_AND_BACK ,osg::PolygonMode::LINE);
-//    geode->getOrCreateStateSet()->setAttribute(polyMode);
+    //    osg::ref_ptr<osg::PolygonMode> polyMode= new osg::PolygonMode;
+    //    polyMode->setMode(osg::PolygonMode::FRONT_AND_BACK ,osg::PolygonMode::LINE);
+    //    geode->getOrCreateStateSet()->setAttribute(polyMode);
     return geode.release();
 }
+
 
 int showTerrain()
 {
     osg::ref_ptr<osg::Group> scene = new osg::Group;
-//    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-//    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("terrain.osg");
-//    osg::ref_ptr<osg::Node> model;
-//    const float radius = 1.0f;
-//    osg::Geode* geode = new osg::Geode;
-//    geode->addDrawable(new osg::ShapeDrawable(new osg::Sphere(osg::Vec3(0.0f,0.0f,0.0f),radius)));
-//    model = geode;
-//    SkyBox *skybox = new SkyBox;
+    //    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+    //    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("terrain.osg");
+    //    osg::ref_ptr<osg::Node> model;
+    //    const float radius = 1.0f;
+    //    osg::Geode* geode = new osg::Geode;
+    //    geode->addDrawable(new osg::ShapeDrawable(new osg::Sphere(osg::Vec3(0.0f,0.0f,0.0f),radius)));
+    //    model = geode;
+    //    SkyBox *skybox = new SkyBox;
     scene->addChild(createTerrain());
-//    scene->addChild(SkyBox::createSkyBox(true));
-//    scene->addChild(model.get());
-//    scene->addChild(node.get());
+    //    scene->addChild(createTerrain_tmp());
+    //    scene->addChild(SkyBox::createSkyBox(true));
+    //    scene->addChild(model.get());
+    //    scene->addChild(node.get());
 
     osg::BoundingSphere bs;
     scene->getChild(0)->computeBound();
@@ -387,10 +784,10 @@ int showTerrain()
     light->setConstantAttenuation(1.0f);
     //设置线形衰减指数
     light->setLinearAttenuation(0.0f);
-//    //设置二次方衰减指数
-//    //        light->setQuadraticAttenuation(0.0f);
+    //    //设置二次方衰减指数
+    //    //        light->setQuadraticAttenuation(0.0f);
 
-//    //创建光源
+    //    //创建光源
     osg::ref_ptr<osg::LightSource> lightSource = new osg::LightSource();
     lightSource->setLight(light.get());
     scene->addChild(lightSource.get());
@@ -407,40 +804,43 @@ int showTerrain()
 
 int main()
 {
-    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
-    double diffx = demReader->getDiffX();
-    double diffy = demReader->getDiffY();
-    double startLng = demReader->getOriginX();
-    double startLat = demReader->getOriginY();
-    double endLng = startLng + diffx*3601;
-    double endLat = startLat + diffy*3601;
-    cv::Point startTile;
-    cv::Point endTile;
-    demReader->getGoogleMapTile(startLng, startLat, &startTile, 15);
-    demReader->getGoogleMapTile(endLng, endLat, &endTile, 15);
-    cout << startTile.x << ", " << startTile.y << endl;
-    cout << endTile.x << ", " << endTile.y << endl;
-    showTerrain();
-//    #define CUBEMAP_FILENAME(face) "/home/lzt/material/sky_box/" #face ".jpg"
-//    #define CUBEMAP_FILENAME_IR(face) "/home/lzt/material/sky_box/" #face "-ir.jpg"
-//    cv::Mat matposx = cv::imread(CUBEMAP_FILENAME(posx));
-//    cv::Mat matnegx = cv::imread(CUBEMAP_FILENAME(negx));
-//    cv::Mat matposy = cv::imread(CUBEMAP_FILENAME(posy));
-//    cv::Mat matnegy = cv::imread(CUBEMAP_FILENAME(negy));
-//    cv::Mat matposz = cv::imread(CUBEMAP_FILENAME(posz));
-//    cv::Mat matnegz = cv::imread(CUBEMAP_FILENAME(negz));
-//    cv::Mat posxir, negxir, posyir, negyir, poszir, negzir;
-//    cv::cvtColor(matposx, posxir, cv::COLOR_BGR2GRAY);
-//    cv::imwrite(CUBEMAP_FILENAME_IR(posx), posxir);
-//    cv::cvtColor(matnegx, negxir, cv::COLOR_BGR2GRAY);
-//    cv::imwrite(CUBEMAP_FILENAME_IR(negx), negxir);
-//    cv::cvtColor(matposy, posyir, cv::COLOR_BGR2GRAY);
-//    cv::imwrite(CUBEMAP_FILENAME_IR(posy), posyir);
-//    cv::cvtColor(matnegy, negyir, cv::COLOR_BGR2GRAY);
-//    cv::imwrite(CUBEMAP_FILENAME_IR(negy), negyir);
-//    cv::cvtColor(matposz, poszir, cv::COLOR_BGR2GRAY);
-//    cv::imwrite(CUBEMAP_FILENAME_IR(posz), poszir);
-//    cv::cvtColor(matnegz, negzir, cv::COLOR_BGR2GRAY);
-//    cv::imwrite(CUBEMAP_FILENAME_IR(negz), negzir);
+    //    DEMReader *demReader = new DEMReader("/home/lzt/material/DEM/ASTGTM2_N12E044/ASTGTM2_N12E044_dem.tif");
+    //    double diffx = demReader->getDiffX();
+    //    double diffy = demReader->getDiffY();
+    //    double startLng = demReader->getOriginX();
+    //    double startLat = demReader->getOriginY();
+    //    double endLng = startLng + diffx*3601;
+    //    double endLat = startLat + diffy*3601;
+    //    cv::Point startTile;
+    //    cv::Point endTile;
+    //    demReader->getGoogleMapTile(startLng, startLat, &startTile, 15);
+    //    demReader->getGoogleMapTile(endLng, endLat, &endTile, 15);
+    //    cout << startTile.x << ", " << startTile.y << endl;
+    //    cout << endTile.x << ", " << endTile.y << endl;
+
+    //showTerrain();
+    saveRawTerrain();
+//    saveRawTerrain_WholeOne();
+    //    #define CUBEMAP_FILENAME(face) "/home/lzt/material/sky_box/" #face ".jpg"
+    //    #define CUBEMAP_FILENAME_IR(face) "/home/lzt/material/sky_box/" #face "-ir.jpg"
+    //    cv::Mat matposx = cv::imread(CUBEMAP_FILENAME(posx));
+    //    cv::Mat matnegx = cv::imread(CUBEMAP_FILENAME(negx));
+    //    cv::Mat matposy = cv::imread(CUBEMAP_FILENAME(posy));
+    //    cv::Mat matnegy = cv::imread(CUBEMAP_FILENAME(negy));
+    //    cv::Mat matposz = cv::imread(CUBEMAP_FILENAME(posz));
+    //    cv::Mat matnegz = cv::imread(CUBEMAP_FILENAME(negz));
+    //    cv::Mat posxir, negxir, posyir, negyir, poszir, negzir;
+    //    cv::cvtColor(matposx, posxir, cv::COLOR_BGR2GRAY);
+    //    cv::imwrite(CUBEMAP_FILENAME_IR(posx), posxir);
+    //    cv::cvtColor(matnegx, negxir, cv::COLOR_BGR2GRAY);
+    //    cv::imwrite(CUBEMAP_FILENAME_IR(negx), negxir);
+    //    cv::cvtColor(matposy, posyir, cv::COLOR_BGR2GRAY);
+    //    cv::imwrite(CUBEMAP_FILENAME_IR(posy), posyir);
+    //    cv::cvtColor(matnegy, negyir, cv::COLOR_BGR2GRAY);
+    //    cv::imwrite(CUBEMAP_FILENAME_IR(negy), negyir);
+    //    cv::cvtColor(matposz, poszir, cv::COLOR_BGR2GRAY);
+    //    cv::imwrite(CUBEMAP_FILENAME_IR(posz), poszir);
+    //    cv::cvtColor(matnegz, negzir, cv::COLOR_BGR2GRAY);
+    //    cv::imwrite(CUBEMAP_FILENAME_IR(negz), negzir);
 
 }

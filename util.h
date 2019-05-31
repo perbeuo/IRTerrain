@@ -5,6 +5,9 @@
 #include <QVector3D>
 #include <QImage>
 #include <cmath>
+#define C1 3.742e-16
+#define C2 1.4388e-2
+#define K0 273.15
 class Point{
 public:
     double x,y,z;
@@ -248,14 +251,23 @@ public:
         //        vecs.push_back(Cross(vec3(pts[5], target), vec3(pts[5], pts[6])) * (1.0/PointToPoint(Geometry::calCenterPoint(pts[5], pts[6], target), target)));
         //        vecs.push_back(Cross(vec3(pts[6], target), vec3(pts[6], pts[4])) * (1.0/PointToPoint(Geometry::calCenterPoint(pts[6], pts[4], target), target)));
         //        vecs.push_back(Cross(vec3(pts[7], pts[6]), vec3(pts[7], pts[4])) * (1.0/PointToPoint(Geometry::calCenterPoint(pts[7], pts[6], pts[4]), target)));
-        vecs.push_back(Cross(vec3(pts[0], pts[1]), vec3(pts[0], pts[3])) * (PointToPoint(pts[0], target)/(PointToPoint(pts[0], target) + PointToPoint(pts[1], target) + PointToPoint(pts[0], pts[1]))));
-        vecs.push_back(Cross(vec3(pts[1], target), vec3(pts[1], pts[3])) * (PointToPoint(pts[1], target)/(PointToPoint(pts[1], target) + PointToPoint(pts[3], target) + PointToPoint(pts[1], pts[3]))));
-        vecs.push_back(Cross(vec3(pts[2], target), vec3(pts[2], pts[1])) * (PointToPoint(pts[2], target)/(PointToPoint(pts[2], target) + PointToPoint(pts[1], target) + PointToPoint(pts[2], pts[1]))));
-        vecs.push_back(Cross(vec3(pts[4], target), vec3(pts[4], pts[2])) * (PointToPoint(pts[4], target)/(PointToPoint(pts[4], target) + PointToPoint(pts[2], target) + PointToPoint(pts[4], pts[2]))));
-        vecs.push_back(Cross(vec3(pts[3], target), vec3(pts[3], pts[5])) * (PointToPoint(pts[3], target)/(PointToPoint(pts[3], target) + PointToPoint(pts[5], target) + PointToPoint(pts[3], pts[5]))));
-        vecs.push_back(Cross(vec3(pts[5], target), vec3(pts[5], pts[6])) * (PointToPoint(pts[5], target)/(PointToPoint(pts[5], target) + PointToPoint(pts[6], target) + PointToPoint(pts[5], pts[6]))));
-        vecs.push_back(Cross(vec3(pts[6], target), vec3(pts[6], pts[4])) * (PointToPoint(pts[6], target)/(PointToPoint(pts[6], target) + PointToPoint(pts[4], target) + PointToPoint(pts[6], pts[4]))));
-        vecs.push_back(Cross(vec3(pts[7], pts[6]), vec3(pts[7], pts[4])) * (PointToPoint(pts[7], target)/(PointToPoint(pts[7], target) + PointToPoint(pts[4], target) + PointToPoint(pts[7], pts[4]))));
+//        vecs.push_back(Cross(vec3(pts[0], pts[1]), vec3(pts[0], pts[3])) * (PointToPoint(pts[0], target)/(PointToPoint(pts[0], target) + PointToPoint(pts[1], target) + PointToPoint(pts[0], pts[1]))));
+//        vecs.push_back(Cross(vec3(pts[1], target), vec3(pts[1], pts[3])) * (PointToPoint(pts[1], target)/(PointToPoint(pts[1], target) + PointToPoint(pts[3], target) + PointToPoint(pts[1], pts[3]))));
+//        vecs.push_back(Cross(vec3(pts[2], target), vec3(pts[2], pts[1])) * (PointToPoint(pts[2], target)/(PointToPoint(pts[2], target) + PointToPoint(pts[1], target) + PointToPoint(pts[2], pts[1]))));
+//        vecs.push_back(Cross(vec3(pts[4], target), vec3(pts[4], pts[2])) * (PointToPoint(pts[4], target)/(PointToPoint(pts[4], target) + PointToPoint(pts[2], target) + PointToPoint(pts[4], pts[2]))));
+//        vecs.push_back(Cross(vec3(pts[3], target), vec3(pts[3], pts[5])) * (PointToPoint(pts[3], target)/(PointToPoint(pts[3], target) + PointToPoint(pts[5], target) + PointToPoint(pts[3], pts[5]))));
+//        vecs.push_back(Cross(vec3(pts[5], target), vec3(pts[5], pts[6])) * (PointToPoint(pts[5], target)/(PointToPoint(pts[5], target) + PointToPoint(pts[6], target) + PointToPoint(pts[5], pts[6]))));
+//        vecs.push_back(Cross(vec3(pts[6], target), vec3(pts[6], pts[4])) * (PointToPoint(pts[6], target)/(PointToPoint(pts[6], target) + PointToPoint(pts[4], target) + PointToPoint(pts[6], pts[4]))));
+//        vecs.push_back(Cross(vec3(pts[7], pts[6]), vec3(pts[7], pts[4])) * (PointToPoint(pts[7], target)/(PointToPoint(pts[7], target) + PointToPoint(pts[4], target) + PointToPoint(pts[7], pts[4]))));
+        vecs.push_back(Cross(vec3(pts[0], pts[1]), vec3(pts[0], pts[3])) * (PointToPoint(pts[0], pts[1])/(PointToPoint(pts[0], target) + PointToPoint(pts[1], target) + PointToPoint(pts[0], pts[1]))));
+        vecs.push_back(Cross(vec3(pts[1], target), vec3(pts[1], pts[3])) * (PointToPoint(pts[1], pts[3])/(PointToPoint(pts[1], target) + PointToPoint(pts[3], target) + PointToPoint(pts[1], pts[3]))));
+        vecs.push_back(Cross(vec3(pts[2], target), vec3(pts[2], pts[1])) * (PointToPoint(pts[2], pts[1])/(PointToPoint(pts[2], target) + PointToPoint(pts[1], target) + PointToPoint(pts[2], pts[1]))));
+        vecs.push_back(Cross(vec3(pts[4], target), vec3(pts[4], pts[2])) * (PointToPoint(pts[4], pts[2])/(PointToPoint(pts[4], target) + PointToPoint(pts[2], target) + PointToPoint(pts[4], pts[2]))));
+        vecs.push_back(Cross(vec3(pts[3], target), vec3(pts[3], pts[5])) * (PointToPoint(pts[3], pts[5])/(PointToPoint(pts[3], target) + PointToPoint(pts[5], target) + PointToPoint(pts[3], pts[5]))));
+        vecs.push_back(Cross(vec3(pts[5], target), vec3(pts[5], pts[6])) * (PointToPoint(pts[5], pts[6])/(PointToPoint(pts[5], target) + PointToPoint(pts[6], target) + PointToPoint(pts[5], pts[6]))));
+        vecs.push_back(Cross(vec3(pts[6], target), vec3(pts[6], pts[4])) * (PointToPoint(pts[6], pts[4])/(PointToPoint(pts[6], target) + PointToPoint(pts[4], target) + PointToPoint(pts[6], pts[4]))));
+        vecs.push_back(Cross(vec3(pts[7], pts[6]), vec3(pts[7], pts[4])) * (PointToPoint(pts[7], pts[4])/(PointToPoint(pts[7], target) + PointToPoint(pts[4], target) + PointToPoint(pts[7], pts[4]))));
+
         itor = vecs.begin();
         vec3 res(0, 0, 0);
         while(itor != vecs.end())
